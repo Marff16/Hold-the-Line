@@ -1,0 +1,20 @@
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "hold-the-line"
+version = "0.1.0"
+description = "Hold The Line: a fixed-map PettingZoo-style 2D multi-agent drone simulation environment."
+authors = ["Hold the Line Contributors"]
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.15"
+numpy = ">=1.24"
+gymnasium = ">=0.29"
+pettingzoo = ">=1.24"
+matplotlib = ">=3.8"
+fastapi = ">=0.115"
+uvicorn = {extras = ["standard"], version = ">=0.32"}

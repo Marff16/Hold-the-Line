@@ -1,0 +1,40 @@
+{
+  "name": "Test 1",
+  "world_size": 100,
+  "terrain": {
+    "image": null
+  },
+  "red_spawn_zone": { "x": 30, "y": 90, "w": 40, "h": 8 },
+  "blue_spawn_zone": { "x": 30, "y": 4, "w": 40, "h": 8 },
+  "front_line_y": 51,
+  "protected_zone": { "x": 34, "y": 8, "w": 32, "h": 18 },
+  "objectives": [
+    { "x": 44, "y": 17, "radius": 1.5 },
+    { "x": 58, "y": 18, "radius": 1.5 }
+  ],
+  "buildings": [
+    { "x": 8, "y": 52, "w": 18, "h": 12 },
+    { "x": 35, "y": 56, "w": 12, "h": 22 },
+    { "x": 58, "y": 55, "w": 12, "h": 20 },
+    { "x": 78, "y": 48, "w": 14, "h": 12 },
+    { "x": 20, "y": 30, "w": 20, "h": 10 },
+    { "x": 52, "y": 32, "w": 18, "h": 10 },
+    { "x": 74, "y": 25, "w": 10, "h": 15 }
+  ],
+  "drones": {
+    "blue": {
+      "count": 2,
+      "radius": 1.0,
+      "max_speed": 18.0,
+      "detection_radius": 18.0,
+      "intercept_radius": 2.0
+    },
+    "red": {
+      "count": 2,
+      "radius": 1.0,
+      "max_speed": 15.0,
+      "scouting_radius": 10.0,
+      "info_threshold": 5.0
+    }
+  }
+}

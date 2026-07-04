@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hold The Line</title>
+    <link rel="icon" href="/static/icon.png" type="image/png" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="page-about">
+    <header class="topbar">
+      <div class="topbar-left">
+        <a class="brand" href="#" data-page-link="simulation" aria-label="Hold The Line">
+          <img src="/static/icon.png" alt="" onerror="this.classList.add('missing')" />
+          <span class="brand-text-wrap">
+            <span class="brand-text-base">Hold The Line</span>
+            <span class="brand-text-red" aria-hidden="true">Hold The Line</span>
+            <span class="brand-text-blue" aria-hidden="true">Hold The Line</span>
+          </span>
+        </a>
+        <div class="control-group">
+          <div class="field instance-field">
+            <span class="field-label">Instance</span>
+            <div class="select-wrap">
+              <select id="instanceSelect"></select>
+            </div>
+            <div class="eye-wrap">
+              <button type="button" id="eyeButton" class="eye-button" aria-label="View instance config" title="View instance config">
+                <svg class="icon eye-closed" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M2.5 12s3.8-6.2 9.5-6.2S21.5 12 21.5 12s-3.8 6.2-9.5 6.2S2.5 12 2.5 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                  <path d="M2.5 12h19" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+                <svg class="icon eye-open" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M2.5 12s3.8-6.2 9.5-6.2S21.5 12 21.5 12s-3.8 6.2-9.5 6.2S2.5 12 2.5 12Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                  <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Policy</span>
+            <button type="button" id="policyButton" class="policy-button">Configure</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="topbar-center">
+        <div class="playback-group">
+          <button id="playPause" class="icon-button play-button" aria-label="Play" title="Play">
+            <svg class="icon icon-play is-active" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7.5 4.8 L19 12 L7.5 19.2 Z" fill="currentColor" />
+            </svg>
+            <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="6" y="4.8" width="4.4" height="14.4" rx="1" fill="currentColor" />
+              <rect x="13.6" y="4.8" width="4.4" height="14.4" rx="1" fill="currentColor" />
+            </svg>
+            <svg class="icon icon-resume" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4.5" y="4.8" width="3" height="14.4" rx="1" fill="currentColor" />
+              <path d="M10.5 4.8 L21 12 L10.5 19.2 Z" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="step" class="icon-button" aria-label="Step forward one frame" title="Step forward one frame">
+            <svg class="icon is-active" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4.5 5.2 L13.5 12 L4.5 18.8 Z" fill="currentColor" />
+              <rect x="16" y="5.2" width="3.2" height="13.6" rx="1" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="reset" class="icon-button" aria-label="Reset" title="Reset">
+            <svg class="icon is-active" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 5V1.2L6.6 6 12 10.8V7a5 5 0 1 1 -4.9 6H4.9A7 7 0 1 0 12 5Z"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <nav class="topnav topbar-right">
+        <button class="nav-link active" data-page-link="about">About</button>
+        <button class="nav-link" data-page-link="simulation">Simulator</button>
+      </nav>
+    </header>
+
+    <div class="config-modal-overlay" id="configModalOverlay">
+      <div class="config-modal" role="dialog" aria-modal="true" aria-labelledby="instanceConfigTitle">
+        <button type="button" id="configModalClose" class="config-modal-close" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 5 L19 19 M19 5 L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+        <div class="config-popup-title" id="instanceConfigTitle">instance.json</div>
+        <pre class="config-popup-body" id="instanceConfigBody">Loading…</pre>
+      </div>
+    </div>
+
+    <div class="config-modal-overlay" id="policyModalOverlay">
+      <div class="config-modal" role="dialog" aria-modal="true" aria-labelledby="policyModalTitle">
+        <button type="button" id="policyModalClose" class="config-modal-close" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 5 L19 19 M19 5 L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+        <div class="config-popup-title" id="policyModalTitle">Policy</div>
+        <div class="policy-modal-body">
+          <div class="field policy-field">
+            <span class="field-label"><span class="swatch blue"></span>Blue Team</span>
+            <div class="select-wrap">
+              <select id="policyBlue"></select>
+            </div>
+          </div>
+          <div class="field policy-field">
+            <span class="field-label"><span class="swatch red"></span>Red Team</span>
+            <div class="select-wrap">
+              <select id="policyRed"></select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <main class="page" id="simulationPage">
+      <section class="sim-layout">
+        <section class="main-stage">
+          <section class="views" id="viewsContainer">
+            <div class="view-big-slot" id="bigSlot"></div>
+            <div class="view-thumb-col">
+              <div class="view-thumb-slot" id="thumbSlot1"></div>
+              <div class="view-thumb-slot" id="thumbSlot2"></div>
+            </div>
+          </section>
+
+          <section class="below-views">
+            <section class="metrics">
+              <h2>Metrics</h2>
+              <dl id="metrics"></dl>
+            </section>
+            <div class="terrain-toggle-group">
+              <div class="terrain-toggle" role="group" aria-label="Map style">
+                <button id="terrainRealistic" class="terrain-toggle-btn" type="button" aria-pressed="false" aria-label="Realistic map" title="Realistic map">
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <rect x="1" y="1" width="22" height="22" rx="4" fill="#c9c2a8" />
+                    <rect x="2" y="16" width="6" height="6" fill="#9fbb84" />
+                    <rect x="0" y="10" width="24" height="4" fill="#847d6e" />
+                    <rect x="10" y="0" width="4" height="24" fill="#847d6e" />
+                    <path d="M1 12 H6 M9 12 H15 M18 12 H23" stroke="#e9e4d4" stroke-width="1" stroke-linecap="round" />
+                    <path d="M12 1 V6 M12 9 V15 M12 18 V23" stroke="#e9e4d4" stroke-width="1" stroke-linecap="round" />
+                    <rect x="2" y="6" width="5" height="4" fill="#8f8570" />
+                    <path d="M1.5 6 L4.5 2.5 L7.5 6 Z" fill="#5c4c3a" />
+                    <rect x="17" y="5" width="5" height="5" fill="#7f8f9c" />
+                    <path d="M16.5 5 L19.5 1.2 L22.5 5 Z" fill="#4d5860" />
+                    <rect x="16" y="16" width="6" height="5" fill="#97836c" />
+                    <path d="M15.3 16 L19 12 L22.7 16 Z" fill="#5c4c3a" />
+                  </svg>
+                </button>
+                <button id="terrainConceptual" class="terrain-toggle-btn" type="button" aria-pressed="false" aria-label="Conceptual map" title="Conceptual map">
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <rect x="1" y="1" width="22" height="22" rx="4" fill="#08090a" />
+                    <path d="M1 6 H23 M1 12 H23 M1 18 H23 M6 1 V23 M12 1 V23 M18 1 V23" stroke="#ffffff" stroke-width="1" />
+                  </svg>
+                </button>
+              </div>
+              <span class="terrain-toggle-label">View</span>
+            </div>
+            <section class="legend">
+              <h2>Legend</h2>
+              <div><span class="swatch blue"></span>Defenders</div>
+              <div><span class="swatch red"></span>Scouts</div>
+              <div><span class="swatch building"></span>Buildings</div>
+            </section>
+          </section>
+        </section>
+
+      </section>
+    </main>
+
+    <main class="page visible active" id="aboutPage">
+      <section class="about-page">
+        <h1>Hold The Line</h1>
+        <p>Work in progress</p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span class="last-updated">Last updated: July 4, 2026</span>
+      <p>Built by <a href="https://marvinguelhan.de/pages/en/home/" target="_blank" rel="noopener noreferrer">Marvin Gülhan</a></p>
+      <div class="socials">
+        <a href="https://www.linkedin.com/in/marvin-g%C3%BClhan-b1912v1909b09/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+          <svg class="social-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4.98 3.5C4.98 4.88 3.86 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1s2.48 1.12 2.48 2.5ZM.3 8h4.4v15H.3V8Zm7.2 0h4.2v2.05h.06c.58-1.1 2-2.26 4.12-2.26 4.4 0 5.22 2.9 5.22 6.68V23h-4.4v-7.56c0-1.8-.03-4.12-2.5-4.12-2.52 0-2.9 1.97-2.9 4V23H7.5V8Z" />
+          </svg>
+        </a>
+        <a href="https://github.com/Marff16" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+          <svg class="social-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2.16c-3.2.7-3.88-1.36-3.88-1.36-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.24 3.33.95.1-.74.4-1.24.73-1.53-2.55-.29-5.23-1.28-5.23-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0C17.04 4.95 18 5.26 18 5.26c.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.16c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+          </svg>
+        </a>
+        <a href="https://scholar.google.de/citations?user=4oK7aQwAAAAJ&hl=en" target="_blank" rel="noopener noreferrer" aria-label="Google Scholar">
+          <svg class="social-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z" />
+          </svg>
+        </a>
+        <a href="mailto:marvin.guelhan@proton.me" aria-label="Email">
+          <svg class="social-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457Z" />
+          </svg>
+        </a>
+      </div>
+      <p class="footer-license">
+        Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a> — attribution required
+      </p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
