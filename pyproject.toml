@@ -1,20 +1,32 @@
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry]
-name = "hold-the-line"
+[project]
+name = "HDL
 version = "0.1.0"
-description = "Hold The Line: a fixed-map PettingZoo-style 2D multi-agent drone simulation environment."
-authors = ["Hold the Line Contributors"]
+description = "A fixed-map PettingZoo-style 2D multi-agent drone reconnaissance denial environment."
 readme = "README.md"
-packages = [{ include = "src" }]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.15"
-numpy = ">=1.24"
-gymnasium = ">=0.29"
-pettingzoo = ">=1.24"
-matplotlib = ">=3.8"
-fastapi = ">=0.115"
-uvicorn = {extras = ["standard"], version = ">=0.32"}
+[project.optional-dependencies]
+rl = [
+    "gymnasium>=0.29",
+    "pettingzoo>=1.24",
+]
+render = [
+    "matplotlib>=3.8",
+]
+dev = [
+    "gymnasium>=0.29",
+    "pettingzoo>=1.24",
+    "matplotlib>=3.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["drone_recon_denial_2d*"]
+
