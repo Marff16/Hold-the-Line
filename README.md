@@ -22,7 +22,7 @@ poetry install
 ## Run the web simulator
 
 ```bash
-poetry run uvicorn src.web_app:app --reload
+poetry run uvicorn src.server.app:app --reload
 ```
 
 Open http://127.0.0.1:8000 in a browser. Use the Instance dropdown to switch

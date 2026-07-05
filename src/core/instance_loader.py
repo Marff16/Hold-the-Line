@@ -13,11 +13,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.geometry import Circle, Rect
-from src.map_config import BlueDroneConfig, FixedMapConfig, RedDroneConfig
+from src.core.geometry import Circle, Obstacle, Rect
+from src.core.map_config import BlueDroneConfig, FixedMapConfig, RedDroneConfig
 
 
-INSTANCE_DIR = Path(__file__).resolve().parents[1] / "instances"
+INSTANCE_DIR = Path(__file__).resolve().parents[2] / "instances"
 
 
 def list_instances(instance_dir: Path = INSTANCE_DIR) -> list[dict[str, str]]:
@@ -48,10 +48,10 @@ def load_instance(instance_id: str, instance_dir: Path = INSTANCE_DIR) -> FixedM
 
 
 def parse_instance(data: dict[str, Any], base_dir: Path | None = None, fallback_name: str = "instance") -> FixedMapConfig:
-    world_n = float(data.get("world_size", data.get("world_n", 100.0)))
     if isinstance(data.get("world_size"), list):
         world_size = (float(data["world_size"][0]), float(data["world_size"][1]))
     else:
+        world_n = float(data.get("world_size", data.get("world_n", 100.0)))
         world_size = (world_n, world_n)
 
     terrain_image = _terrain_image(data.get("terrain"), base_dir)
@@ -71,7 +71,7 @@ def parse_instance(data: dict[str, Any], base_dir: Path | None = None, fallback_
     return FixedMapConfig(
         name=str(data.get("name", fallback_name)),
         world_size=world_size,
-        buildings=[_rect(item) for item in data.get("buildings", [])],
+        buildings=[_obstacle(item) for item in data.get("buildings", [])],
         protected_zone=_rect(data["protected_zone"]),
         assets=[_circle(item, default_radius=1.5) for item in objectives],
         red_spawn_zones=[_rect(item) for item in red_spawns],
@@ -103,6 +103,15 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _rect(data: dict[str, Any]) -> Rect:
     return Rect(float(data["x"]), float(data["y"]), float(data["w"]), float(data["h"]))
+
+
+def _obstacle(data: dict[str, Any]) -> Obstacle:
+    if data.get("shape") == "circle":
+        if "center" in data:
+            center = data["center"]
+            return Circle((float(center[0]), float(center[1])), float(data["radius"]))
+        return Circle((float(data["x"]), float(data["y"])), float(data["radius"]))
+    return _rect(data)
 
 
 def _circle(data: dict[str, Any], default_radius: float) -> Circle:

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from src.geometry import Rect
+from src.core.geometry import Circle, Obstacle, Rect
 
 
 if TYPE_CHECKING:
@@ -66,7 +66,7 @@ def build_render_state(env: "HoldTheLineEnv", selected_agent: str | None = None)
         "step": env._step_count,
         "dt": env.dt,
         "world_size": tuple(float(v) for v in env.world_size),
-        "buildings": [_rect_to_dict(rect) for rect in env.buildings],
+        "buildings": [_obstacle_to_dict(obstacle) for obstacle in env.buildings],
         "protected_zone": _rect_to_dict(env.map_config.protected_zone),
         "blue_spawn_zone": _rect_to_dict(env.map_config.blue_spawn_zone),
         "front_line_y": env.front_line_y,
@@ -95,14 +95,34 @@ def _heading_from_velocity(velocity: np.ndarray) -> float:
     return float(np.arctan2(velocity[1], velocity[0]))
 
 
-def _rect_to_dict(rect: Rect) -> dict[str, float]:
+def _rect_to_dict(rect: Rect) -> dict[str, Any]:
     return {
+        "shape": "rect",
         "x": rect.x,
         "y": rect.y,
         "w": rect.w,
         "h": rect.h,
         "center": tuple(float(v) for v in rect.center),
     }
+
+
+def _circle_to_dict(circle: Circle) -> dict[str, Any]:
+    cx, cy = circle.center
+    return {
+        "shape": "circle",
+        "x": cx - circle.radius,
+        "y": cy - circle.radius,
+        "w": circle.radius * 2.0,
+        "h": circle.radius * 2.0,
+        "center": (float(cx), float(cy)),
+        "radius": float(circle.radius),
+    }
+
+
+def _obstacle_to_dict(obstacle: Obstacle) -> dict[str, Any]:
+    if isinstance(obstacle, Circle):
+        return _circle_to_dict(obstacle)
+    return _rect_to_dict(obstacle)
 
 
 def render_matplotlib(env: "HoldTheLineEnv"):
@@ -157,16 +177,27 @@ def render_matplotlib(env: "HoldTheLineEnv"):
     )
 
     for building in env.buildings:
-        ax.add_patch(
-            Rectangle(
-                (building.x, building.y),
-                building.w,
-                building.h,
-                facecolor="#4c4c4c",
-                edgecolor="#222222",
-                alpha=0.85,
+        if isinstance(building, Circle):
+            ax.add_patch(
+                CirclePatch(
+                    building.center,
+                    building.radius,
+                    facecolor="#4c4c4c",
+                    edgecolor="#222222",
+                    alpha=0.85,
+                )
             )
-        )
+        else:
+            ax.add_patch(
+                Rectangle(
+                    (building.x, building.y),
+                    building.w,
+                    building.h,
+                    facecolor="#4c4c4c",
+                    edgecolor="#222222",
+                    alpha=0.85,
+                )
+            )
 
     protected = env.map_config.protected_zone
     ax.add_patch(

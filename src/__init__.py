@@ -1,8 +1,8 @@
 """Hold The Line fixed-map multi-agent environment."""
 
-from src.env import HoldTheLineEnv, env, parallel_env
-from src.instance_loader import list_instances, load_instance, parse_instance
-from src.map_generator import generate_valid_map, validate_map
+from src.core.env import HoldTheLineEnv, env, parallel_env
+from src.core.instance_loader import list_instances, load_instance, parse_instance
+from src.core.map_generator import generate_valid_map, validate_map
 from src.policies import Policy, RandomPolicy
 
 __all__ = [

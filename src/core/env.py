@@ -8,18 +8,21 @@ from typing import Any
 
 import numpy as np
 
-from src.geometry import (
+from src.core.geometry import (
     Circle,
+    Obstacle,
     Rect,
-    circle_intersects_rect,
+    circle_intersects_obstacle,
     clip_norm,
     distance,
+    expand_obstacle,
     line_of_sight_clear,
-    segment_intersects_rect,
+    obstacle_contains_point,
+    segment_intersects_obstacle,
 )
-from src.map_config import FixedMapConfig, default_fixed_map
-from src.rendering import build_render_state, render_matplotlib
-from src.spaces import Box
+from src.core.map_config import FixedMapConfig, default_fixed_map
+from src.core.rendering import build_render_state, render_matplotlib
+from src.core.spaces import Box
 
 
 try:  # pragma: no cover - exercised only when PettingZoo is installed.
@@ -112,7 +115,7 @@ class HoldTheLineEnv(ParallelEnv):
         return np.array(self.map_config.world_size, dtype=np.float32)
 
     @property
-    def buildings(self) -> list[Rect]:
+    def buildings(self) -> list[Obstacle]:
         return self.map_config.buildings
 
     @property
@@ -203,7 +206,7 @@ class HoldTheLineEnv(ParallelEnv):
                     [np.clip(zone.center[0], zone.min_x + radius, zone.max_x - radius), value],
                     dtype=np.float32,
                 )
-            if any(building.contains_point(point, margin=radius) for building in self.buildings):
+            if any(obstacle_contains_point(point, building, margin=radius) for building in self.buildings):
                 raise RuntimeError(f"spawn point {point.tolist()} is blocked by a building")
             positions.append(point)
         return positions
@@ -300,8 +303,8 @@ class HoldTheLineEnv(ParallelEnv):
                 or candidate_pos[1] + state.radius > world[1]
             )
             obstacle_hit = any(
-                circle_intersects_rect(candidate_pos, state.radius, building)
-                or segment_intersects_rect(old_pos, candidate_pos, building.expanded(state.radius))
+                circle_intersects_obstacle(candidate_pos, state.radius, building)
+                or segment_intersects_obstacle(old_pos, candidate_pos, expand_obstacle(building, state.radius))
                 for building in self.buildings
             )
             if boundary_hit or obstacle_hit:

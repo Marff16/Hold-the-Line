@@ -13,11 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src import parallel_env
-from src.instance_loader import INSTANCE_DIR, list_instances, load_instance
+from src.core.instance_loader import INSTANCE_DIR, list_instances, load_instance
 from src.policies import RandomPolicy
 
 
-WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
 
 class ControlRequest(BaseModel):

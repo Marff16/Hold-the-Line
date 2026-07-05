@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.map_generator import describe_map, generate_valid_map, validate_map
+from src.core.map_generator import describe_map, generate_valid_map, validate_map
 
 
 def main() -> None:

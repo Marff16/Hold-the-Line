@@ -1,11 +1,13 @@
+import dataclasses
 import unittest
 
 import numpy as np
 
 from src import parallel_env
-from src.geometry import Rect, distance, line_of_sight_clear, segment_intersects_rect
-from src.instance_loader import load_instance
-from src.map_generator import generate_valid_map, validate_map
+from src.core.geometry import Rect, distance, line_of_sight_clear, segment_intersects_rect
+from src.core.instance_loader import load_instance
+from src.core.map_config import default_fixed_map
+from src.core.map_generator import generate_valid_map, validate_map
 
 
 class HoldTheLineTests(unittest.TestCase):
@@ -177,7 +179,8 @@ class HoldTheLineTests(unittest.TestCase):
         self.assertGreater(rewards[red], 0.0)
 
     def test_collision_with_building_reverts_position(self):
-        env = parallel_env()
+        map_config = dataclasses.replace(default_fixed_map(), buildings=[Rect(8.0, 52.0, 18.0, 12.0)])
+        env = parallel_env(map_config=map_config)
         env.reset(seed=123)
         agent = "blue_0"
         env._states[agent].pos = np.array([17.0, 50.8], dtype=np.float32)
@@ -203,14 +206,14 @@ class HoldTheLineTests(unittest.TestCase):
             self.assertGreater(env._states[red_agent].pos[1], env.world_size[1] * 0.85)
 
     def test_spawn_positions_are_evenly_spaced_across_bands(self):
-        env = parallel_env(map_config=load_instance("test2"))
+        env = parallel_env(map_config=load_instance("test1"))
         env.reset(seed=123)
 
         blue_xs = [env._states[agent].pos[0] for agent in env.blue_agents]
         red_xs = [env._states[agent].pos[0] for agent in env.red_agents]
 
-        np.testing.assert_allclose(blue_xs, [6.0, 114.0], atol=1e-5)
-        np.testing.assert_allclose(np.diff(red_xs), np.full(2, 54.05), atol=1e-4)
+        np.testing.assert_allclose(blue_xs, [60.0], atol=1e-5)
+        np.testing.assert_allclose(np.diff(red_xs), [108.1], atol=1e-4)
 
     def test_render_state_includes_team_shared_visibility(self):
         env = parallel_env()

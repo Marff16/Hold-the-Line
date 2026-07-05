@@ -116,10 +116,6 @@ def segment_intersects_rect(start: Array, end: Array, rect: Rect) -> bool:
     return u1 <= u2
 
 
-def line_of_sight_clear(start: Array, end: Array, blockers: list[Rect]) -> bool:
-    return not any(segment_intersects_rect(start, end, blocker) for blocker in blockers)
-
-
 def point_in_any_rect(point: Array, rects: list[Rect]) -> bool:
     return any(rect.contains_point(point) for rect in rects)
 
@@ -133,3 +129,73 @@ def circle_intersects_rect(center: Array, radius: float, rect: Rect) -> bool:
         dtype=np.float32,
     )
     return distance(center, nearest) <= radius
+
+
+# Obstacle model: buildings are either axis-aligned Rects or round Circles
+# (silos, towers, planters, ...). Every hot-path check below dispatches on
+# the concrete type so callers can pass a mixed list without caring which
+# shape a given obstacle is.
+Obstacle = Rect | Circle
+
+
+def segment_intersects_circle(start: Array, end: Array, circle: Circle) -> bool:
+    start = np.asarray(start, dtype=np.float32)
+    end = np.asarray(end, dtype=np.float32)
+    center = circle.center_array
+    segment = end - start
+    seg_len_sq = float(np.dot(segment, segment))
+    if seg_len_sq == 0.0:
+        return distance(start, center) <= circle.radius
+    t = float(np.clip(np.dot(center - start, segment) / seg_len_sq, 0.0, 1.0))
+    closest = start + segment * t
+    return distance(closest, center) <= circle.radius
+
+
+def segment_intersects_obstacle(start: Array, end: Array, obstacle: Obstacle) -> bool:
+    if isinstance(obstacle, Rect):
+        return segment_intersects_rect(start, end, obstacle)
+    return segment_intersects_circle(start, end, obstacle)
+
+
+def circle_intersects_circle(center: Array, radius: float, circle: Circle) -> bool:
+    return distance(center, circle.center_array) <= radius + circle.radius
+
+
+def circle_intersects_obstacle(center: Array, radius: float, obstacle: Obstacle) -> bool:
+    if isinstance(obstacle, Rect):
+        return circle_intersects_rect(center, radius, obstacle)
+    return circle_intersects_circle(center, radius, obstacle)
+
+
+def expand_obstacle(obstacle: Obstacle, margin: float) -> Obstacle:
+    if isinstance(obstacle, Rect):
+        return obstacle.expanded(margin)
+    return Circle(obstacle.center, obstacle.radius + margin)
+
+
+def obstacle_contains_point(point: Array, obstacle: Obstacle, margin: float = 0.0) -> bool:
+    if isinstance(obstacle, Rect):
+        return obstacle.contains_point(point, margin=margin)
+    return distance(point, obstacle.center_array) <= obstacle.radius + margin
+
+
+def point_in_any_obstacle(point: Array, obstacles: list[Obstacle]) -> bool:
+    return any(obstacle_contains_point(point, obstacle) for obstacle in obstacles)
+
+
+def obstacles_overlap(a: Obstacle, b: Obstacle, margin: float = 0.0) -> bool:
+    if isinstance(a, Rect) and isinstance(b, Rect):
+        return not (
+            a.max_x + margin < b.min_x
+            or a.min_x - margin > b.max_x
+            or a.max_y + margin < b.min_y
+            or a.min_y - margin > b.max_y
+        )
+    if isinstance(a, Circle) and isinstance(b, Circle):
+        return circle_intersects_circle(a.center_array, a.radius + margin, b)
+    rect, circle = (a, b) if isinstance(a, Rect) else (b, a)
+    return circle_intersects_rect(circle.center_array, circle.radius + margin, rect)
+
+
+def line_of_sight_clear(start: Array, end: Array, blockers: list[Obstacle]) -> bool:
+    return not any(segment_intersects_obstacle(start, end, blocker) for blocker in blockers)

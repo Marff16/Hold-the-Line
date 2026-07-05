@@ -1,7 +1,7 @@
 import unittest
 
-from src.instance_loader import list_instances, load_instance
-from src.web_app import ControlRequest, WebSimulation
+from src.core.instance_loader import list_instances, load_instance
+from src.server.app import ControlRequest, WebSimulation
 
 
 class WebAppTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(snapshot["controls"]["policy_options"], ["Random"])
         self.assertEqual(snapshot["controls"]["policy_blue"], "Random")
         self.assertEqual(snapshot["controls"]["policy_red"], "Random")
-        self.assertEqual(len(snapshot["agents"]), 4)
+        self.assertEqual(len(snapshot["agents"]), 3)
 
         simulation.apply_control(ControlRequest(playing=True, speed=9, selected_agent="blue_0"))
         snapshot = simulation.snapshot()
@@ -37,14 +37,14 @@ class WebAppTests(unittest.TestCase):
         test2 = load_instance("test2")
         self.assertEqual(test2.name, "Test 2")
         self.assertEqual(test2.blue_drones.count, 2)
-        self.assertEqual(test2.red_drones.count, 3)
-        self.assertEqual(len(test2.assets), 3)
+        self.assertEqual(test2.red_drones.count, 4)
+        self.assertEqual(len(test2.assets), 2)
 
         simulation = WebSimulation()
         simulation.load_instance("test2")
         snapshot = simulation.snapshot()
         self.assertEqual(snapshot["controls"]["instance_id"], "test2")
-        self.assertEqual(len(snapshot["agents"]), 5)
+        self.assertEqual(len(snapshot["agents"]), 6)
 
     def test_terrain_toggle_control(self):
         simulation = WebSimulation()

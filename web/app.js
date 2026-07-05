@@ -736,7 +736,68 @@ function drawRect(view, rect, fill, stroke, width) {
 // light), shingle courses running down each slope, and a chimney whose
 // position is hashed from the building's own coordinates so it stays put
 // across re-renders instead of jittering every frame.
-function drawBuilding(view, rect, realistic) {
+function drawBuilding(view, building, realistic) {
+  if (building.shape === "circle") {
+    drawCircularBuilding(view, building, realistic);
+    return;
+  }
+  drawRectBuilding(view, building, realistic);
+}
+
+// Round obstacles (tanks, silos, planters, rotundas) get their own draw path
+// instead of being squeezed through the rectangle roof renderer below - a
+// dome reads very differently from a pitched roof even in flat/top-down mode.
+function drawCircularBuilding(view, circle, realistic) {
+  const { ctx, scale } = view;
+  const [cx, cy] = worldToCanvas(view, circle.center);
+  const r = circle.radius * scale;
+
+  if (!realistic) {
+    drawCircle(view, circle.center, circle.radius, "#59564e", "#b7b0a1", 1.2);
+    return;
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx + r * 0.06, cy + r * 0.1, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.fill();
+
+  const gradient = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+  gradient.addColorStop(0, "#9a9186");
+  gradient.addColorStop(1, "#5c5648");
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(0,0,0,0.22)";
+  ctx.lineWidth = Math.max(0.6, r * 0.035);
+  for (let ring = 0.35; ring < 1; ring += 0.28) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * ring, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "#3f3122";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const hatchRadius = Math.max(1.2, r * 0.14);
+  const seed = hash2(circle.center[0] * 1.7, circle.center[1] * 2.3);
+  const angle = seed * Math.PI * 2;
+  const hx = cx + Math.cos(angle) * r * 0.3;
+  const hy = cy + Math.sin(angle) * r * 0.3;
+  ctx.fillStyle = "#2c241a";
+  ctx.beginPath();
+  ctx.arc(hx, hy, hatchRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawRectBuilding(view, rect, realistic) {
   if (!realistic) {
     drawRect(view, rect, "#59564e", "#b7b0a1", 1.2);
     return;
@@ -966,12 +1027,16 @@ function visibilityCornerPoints(view) {
     [view.worldW, view.worldH],
     [0, view.worldH],
   ];
-  for (const rect of view.buildings ?? []) {
+  for (const building of view.buildings ?? []) {
+    if (building.shape === "circle") {
+      points.push(...circlePoints(building, 12));
+      continue;
+    }
     points.push(
-      [rect.x, rect.y],
-      [rect.x + rect.w, rect.y],
-      [rect.x + rect.w, rect.y + rect.h],
-      [rect.x, rect.y + rect.h],
+      [building.x, building.y],
+      [building.x + building.w, building.y],
+      [building.x + building.w, building.y + building.h],
+      [building.x, building.y + building.h],
     );
   }
   return points;
@@ -986,8 +1051,9 @@ function castVisibilityRay(view, center, radius, angle) {
     if (distance !== null && distance < nearestDistance) nearestDistance = distance;
   }
 
-  for (const rect of view.buildings ?? []) {
-    for (const edge of rectEdges(rect)) {
+  for (const building of view.buildings ?? []) {
+    const edges = building.shape === "circle" ? circleEdges(building, 24) : rectEdges(building);
+    for (const edge of edges) {
       const distance = raySegmentDistance(center, direction, edge[0], edge[1]);
       if (distance !== null && distance < nearestDistance) nearestDistance = distance;
     }
@@ -1019,6 +1085,29 @@ function rectEdges(rect) {
     [[maxX, maxY], [minX, maxY]],
     [[minX, maxY], [minX, minY]],
   ];
+}
+
+function circlePoints(circle, segments = 12) {
+  const [cx, cy] = circle.center;
+  const r = circle.radius;
+  const points = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (Math.PI * 2 * i) / segments;
+    points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  return points;
+}
+
+// Ray-vs-circle intersection is exact, but approximating the boundary as a
+// polygon lets circular obstacles reuse the same ray/segment machinery the
+// rest of visibleRangePolygon already relies on for rectangles.
+function circleEdges(circle, segments = 24) {
+  const points = circlePoints(circle, segments);
+  const edges = [];
+  for (let i = 0; i < points.length; i += 1) {
+    edges.push([points[i], points[(i + 1) % points.length]]);
+  }
+  return edges;
 }
 
 function raySegmentDistance(origin, direction, start, end) {

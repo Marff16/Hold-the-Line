@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from src.geometry import Circle, Rect, distance, point_in_any_rect
-from src.map_config import FixedMapConfig
+from src.core.geometry import Circle, Obstacle, Rect, distance, point_in_any_obstacle
+from src.core.map_config import FixedMapConfig
 
 
 @dataclass(frozen=True)
@@ -105,14 +105,14 @@ def generate_candidate_map(
     )
 
 
-def validate_map(config: FixedMapConfig, cell_size: float = 2.0) -> MapValidationResult:
+def validate_map(config: FixedMapConfig, cell_size: float = 2.0, min_buildings: int = 5) -> MapValidationResult:
     """Validate a generated map with a raster reachability check."""
 
     reasons: list[str] = []
     width, height = config.world_size
 
-    if len(config.buildings) < 5:
-        reasons.append("expected at least five buildings")
+    if len(config.buildings) < min_buildings:
+        reasons.append(f"expected at least {min_buildings} buildings")
 
     protected = config.protected_zone
     if not _rect_in_world(protected, config.world_size):
@@ -121,11 +121,11 @@ def validate_map(config: FixedMapConfig, cell_size: float = 2.0) -> MapValidatio
     for index, asset in enumerate(config.assets):
         if not _circle_in_world(asset, config.world_size):
             reasons.append(f"asset {index} is outside world bounds")
-        if point_in_any_rect(asset.center_array, config.buildings):
+        if point_in_any_obstacle(asset.center_array, config.buildings):
             reasons.append(f"asset {index} is inside a building")
 
     protected_samples = _sample_rect_perimeter_points(protected, count_per_side=6)
-    blocked_protected_samples = sum(point_in_any_rect(point, config.buildings) for point in protected_samples)
+    blocked_protected_samples = sum(point_in_any_obstacle(point, config.buildings) for point in protected_samples)
     if blocked_protected_samples > 4:
         reasons.append("protected zone perimeter is too blocked")
 
@@ -167,7 +167,7 @@ def describe_map(config: FixedMapConfig) -> str:
     ]
     lines.append("red_spawns=" + ", ".join(_rect_summary(zone) for zone in config.red_spawn_zones))
     lines.append("objectives=" + ", ".join(f"center{_round_tuple(asset.center)}" for asset in config.assets))
-    lines.append("buildings=" + ", ".join(_rect_summary(building) for building in config.buildings))
+    lines.append("buildings=" + ", ".join(_obstacle_summary(building) for building in config.buildings))
     return "\n".join(lines)
 
 
@@ -224,20 +224,20 @@ def _point_to_cell(point: np.ndarray, cell_size: float, cols: int, rows: int) ->
     )
 
 
-def _cell_blocked(cell: tuple[int, int], cell_size: float, buildings: list[Rect]) -> bool:
+def _cell_blocked(cell: tuple[int, int], cell_size: float, buildings: list[Obstacle]) -> bool:
     center = np.array([(cell[0] + 0.5) * cell_size, (cell[1] + 0.5) * cell_size], dtype=np.float32)
-    return point_in_any_rect(center, buildings)
+    return point_in_any_obstacle(center, buildings)
 
 
-def _free_rect_center(rect: Rect, buildings: list[Rect]) -> np.ndarray | None:
+def _free_rect_center(rect: Rect, buildings: list[Obstacle]) -> np.ndarray | None:
     for candidate in _rect_sample_points(rect):
-        if not point_in_any_rect(candidate, buildings):
+        if not point_in_any_obstacle(candidate, buildings):
             return candidate
     return None
 
 
-def _free_rect_points(rect: Rect, buildings: list[Rect]) -> list[np.ndarray]:
-    return [candidate for candidate in _rect_sample_points(rect) if not point_in_any_rect(candidate, buildings)]
+def _free_rect_points(rect: Rect, buildings: list[Obstacle]) -> list[np.ndarray]:
+    return [candidate for candidate in _rect_sample_points(rect) if not point_in_any_obstacle(candidate, buildings)]
 
 
 def _rect_sample_points(rect: Rect) -> list[np.ndarray]:
@@ -302,3 +302,9 @@ def _round_tuple(values: tuple[float, float]) -> tuple[float, float]:
 
 def _rect_summary(rect: Rect) -> str:
     return f"Rect(x={rect.x:.1f}, y={rect.y:.1f}, w={rect.w:.1f}, h={rect.h:.1f})"
+
+
+def _obstacle_summary(obstacle: Obstacle) -> str:
+    if isinstance(obstacle, Circle):
+        return f"Circle(x={obstacle.center[0]:.1f}, y={obstacle.center[1]:.1f}, r={obstacle.radius:.1f})"
+    return _rect_summary(obstacle)

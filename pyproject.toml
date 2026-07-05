@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "HDL
+name = "HDL"
 version = "0.1.0"
 description = "A fixed-map PettingZoo-style 2D multi-agent drone reconnaissance denial environment."
 readme = "README.md"
@@ -20,13 +20,22 @@ rl = [
 render = [
     "matplotlib>=3.8",
 ]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
 dev = [
     "gymnasium>=0.29",
     "pettingzoo>=1.24",
     "matplotlib>=3.8",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["drone_recon_denial_2d*"]
+include = ["src*"]
+
+[tool.poetry]
+package-mode = false
 
