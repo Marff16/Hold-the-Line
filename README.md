@@ -33,11 +33,3 @@ between the scenario files in `instances/*.json`.
 ```bash
 poetry run python -m unittest discover -s tests
 ```
-
-## Run an example script
-
-```bash
-poetry run python examples/random_rollout.py
-poetry run python examples/render_snapshot.py
-poetry run python examples/generate_maps.py
-```
