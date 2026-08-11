@@ -1,9 +1,9 @@
 # Hold The Line
 
 Hold The Line, or HDL, is a fixed-map MVP for a continuous 2D multi-agent
-reinforcement learning environment where blue defender drones detect, track,
-and abstractly intercept red scout drones before the scouts collect enough
-information about scouting objectives. The README.md will be updated further in later commits.
+reinforcement learning environment where blue defender ground vehicles detect,
+track, and abstractly intercept red scout vehicles before the scouts collect
+enough information about scouting objectives. The README.md will be updated further in later commits.
 
 ## Setup
 

@@ -7,6 +7,7 @@ from src.server.app import ControlRequest, WebSimulation
 class WebAppTests(unittest.TestCase):
     def test_web_simulation_snapshot_and_controls(self):
         simulation = WebSimulation()
+        simulation.load_instance("instance1")
 
         snapshot = simulation.snapshot()
         self.assertEqual(snapshot["step"], 0)
@@ -14,7 +15,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(snapshot["controls"]["policy_options"], ["Random"])
         self.assertEqual(snapshot["controls"]["policy_blue"], "Random")
         self.assertEqual(snapshot["controls"]["policy_red"], "Random")
-        self.assertEqual(len(snapshot["agents"]), 3)
+        self.assertEqual(len(snapshot["agents"]), 4)
 
         simulation.apply_control(ControlRequest(playing=True, speed=9, selected_agent="blue_0"))
         snapshot = simulation.snapshot()
@@ -32,19 +33,19 @@ class WebAppTests(unittest.TestCase):
 
     def test_instance_loader_and_switching(self):
         instances = list_instances()
-        self.assertGreaterEqual(len(instances), 2)
+        self.assertGreaterEqual(len(instances), 1)
 
-        test2 = load_instance("test2")
-        self.assertEqual(test2.name, "Test 2")
-        self.assertEqual(test2.blue_drones.count, 2)
-        self.assertEqual(test2.red_drones.count, 4)
-        self.assertEqual(len(test2.assets), 2)
+        instance1 = load_instance("instance1")
+        self.assertEqual(instance1.name, "Instance 1")
+        self.assertEqual(instance1.blue_drones.count, 2)
+        self.assertEqual(instance1.red_drones.count, 2)
+        self.assertEqual(len(instance1.assets), 2)
 
         simulation = WebSimulation()
-        simulation.load_instance("test2")
+        simulation.load_instance("instance1")
         snapshot = simulation.snapshot()
-        self.assertEqual(snapshot["controls"]["instance_id"], "test2")
-        self.assertEqual(len(snapshot["agents"]), 6)
+        self.assertEqual(snapshot["controls"]["instance_id"], "instance1")
+        self.assertEqual(len(snapshot["agents"]), 4)
 
     def test_terrain_toggle_control(self):
         simulation = WebSimulation()

@@ -14,8 +14,17 @@ const THEME = {
   dark: "#131316",
   light: "#e2e3e7",
   sceneBg: "#0d1110",
+  // Flat/conceptual-mode ground floor - buildings sit on a cleared dirt lot,
+  // not the near-black void the letterbox background uses.
+  dirtFloor: "#33291c",
   transparent: "rgba(0,0,0,0)",
 };
+
+// Matches the packed-facility generator's cell_size (src/core/instances.py
+// create_packed_facility) - every building edge lands on a multiple of this,
+// so the grid overlay and ground tiling both use it too, instead of an
+// unrelated round number that never lines up with real building edges.
+const GROUND_CELL_WORLD_SIZE = 4;
 
 function rgba([r, g, b], alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
@@ -54,14 +63,14 @@ let playbackTouched = false;
 let lastAnimationRender = 0;
 let instancePaths = {};
 let loadedConfigForInstance = null;
-// Recently-destroyed drones: agentId -> { start, position, heading }. Kept
-// around for DEATH_FADE_MS after death so the drone fades out instead of
+// Recently-destroyed scouts: agentId -> { start, position, heading }. Kept
+// around for DEATH_FADE_MS after death so the vehicle fades out instead of
 // just vanishing the instant the server marks it dead.
 let deathFades = new Map();
 
 // Per-team fog-of-war: each team starts knowing only its own side of the
 // front line. Territory beyond the line is revealed permanently once a
-// drone from that team gets within its own vision radius of it, mirroring
+// vehicle from that team gets within its own vision radius of it, mirroring
 // "collected map knowledge" rather than momentary visibility.
 let fogCanvases = {};
 const FOG_PX_PER_UNIT = 4;
@@ -411,6 +420,10 @@ function drawScene(canvas, sceneState, options = {}) {
   ctx.fillStyle = THEME.sceneBg;
   ctx.fillRect(0, 0, width, height);
   const realistic = !!sceneState.terrain?.enabled;
+  // Dirt floor first (under any custom terrain image), same in both modes -
+  // buildings render identically regardless of the realistic/flat toggle now,
+  // so the ground shouldn't visually diverge between the two either.
+  drawFlatGround(view, worldW, worldH);
   drawTerrain(view, sceneState, worldW, worldH);
   if (realistic) {
     drawGroundTexture(view, worldW, worldH);
@@ -492,19 +505,27 @@ function worldToCanvas(view, point) {
   ];
 }
 
+function drawFlatGround(view, worldW, worldH) {
+  const { ctx, scale, offsetX, offsetY } = view;
+  ctx.save();
+  ctx.fillStyle = THEME.dirtFloor;
+  ctx.fillRect(offsetX, offsetY, worldW * scale, worldH * scale);
+  ctx.restore();
+}
+
 function drawGrid(view, worldW, worldH) {
   const { ctx, scale, offsetX, offsetY } = view;
   ctx.save();
   ctx.strokeStyle = "rgba(183,176,161,0.10)";
   ctx.lineWidth = 1;
-  for (let x = 0; x <= worldW; x += 10) {
+  for (let x = 0; x <= worldW; x += GROUND_CELL_WORLD_SIZE) {
     const px = offsetX + x * scale;
     ctx.beginPath();
     ctx.moveTo(px, offsetY);
     ctx.lineTo(px, offsetY + worldH * scale);
     ctx.stroke();
   }
-  for (let y = 0; y <= worldH; y += 10) {
+  for (let y = 0; y <= worldH; y += GROUND_CELL_WORLD_SIZE) {
     const py = offsetY + y * scale;
     ctx.beginPath();
     ctx.moveTo(offsetX, py);
@@ -659,7 +680,10 @@ function drawFog(view, team, sceneState) {
   const fog = ensureFogCanvas(team, sceneState);
   const { ctx, offsetX, offsetY, worldW, worldH, scale } = view;
   ctx.save();
-  ctx.globalAlpha = 0.6;
+  // Fully opaque - unseen-so-far territory is solid black, not a dim tint
+  // over visible terrain. maskToRevealed already fully erases buildings/zones
+  // there; this is the ground layer's half of the same "never seen" state.
+  ctx.globalAlpha = 1;
   ctx.drawImage(fog.canvas, 0, 0, fog.canvas.width, fog.canvas.height, offsetX, offsetY, worldW * scale, worldH * scale);
   ctx.restore();
 }
@@ -716,16 +740,95 @@ function getScoutedFraction(sceneState) {
   return scoutedFractionCache.value;
 }
 
-function drawRect(view, rect, fill, stroke, width) {
+function drawRect(view, rect, fill, stroke, width, touching = EMPTY_TOUCHING) {
   const { ctx, scale } = view;
   const [x, y] = worldToCanvas(view, [rect.x, rect.y + rect.h]);
+  const w = rect.w * scale;
+  const h = rect.h * scale;
   ctx.save();
   ctx.fillStyle = fill;
+  ctx.fillRect(x, y, w, h);
+
+  // Only stroke the parts of each edge NOT covered by a flush-adjacent
+  // neighbor (see touchingIntervals below), segment by segment - a whole-side
+  // skip is wrong whenever a neighbor only partially covers an edge (mixed
+  // footprint sizes make that the common case), since the rest of that edge
+  // still faces open ground and needs its border.
   ctx.strokeStyle = stroke;
   ctx.lineWidth = width;
-  ctx.fillRect(x, y, rect.w * scale, rect.h * scale);
-  ctx.strokeRect(x, y, rect.w * scale, rect.h * scale);
+  ctx.beginPath();
+  for (const [lo, hi] of subtractIntervals(rect.x, rect.x + rect.w, touching.north)) {
+    const sx = x + (lo - rect.x) * scale;
+    const ex = x + (hi - rect.x) * scale;
+    ctx.moveTo(sx, y);
+    ctx.lineTo(ex, y);
+  }
+  for (const [lo, hi] of subtractIntervals(rect.x, rect.x + rect.w, touching.south)) {
+    const sx = x + (lo - rect.x) * scale;
+    const ex = x + (hi - rect.x) * scale;
+    ctx.moveTo(sx, y + h);
+    ctx.lineTo(ex, y + h);
+  }
+  for (const [lo, hi] of subtractIntervals(rect.y, rect.y + rect.h, touching.west)) {
+    const yLo = y + h - (lo - rect.y) * scale;
+    const yHi = y + h - (hi - rect.y) * scale;
+    ctx.moveTo(x, yHi);
+    ctx.lineTo(x, yLo);
+  }
+  for (const [lo, hi] of subtractIntervals(rect.y, rect.y + rect.h, touching.east)) {
+    const yLo = y + h - (lo - rect.y) * scale;
+    const yHi = y + h - (hi - rect.y) * scale;
+    ctx.moveTo(x + w, yHi);
+    ctx.lineTo(x + w, yLo);
+  }
+  ctx.stroke();
   ctx.restore();
+}
+
+const EMPTY_TOUCHING = { north: [], south: [], west: [], east: [] };
+
+// For each of rect's four world-space edges, the [lo, hi] sub-intervals
+// (along that edge) that sit flush against another rect's edge with zero
+// gap - used to stroke only the leftover, ground-facing portions.
+function touchingIntervals(rect, buildings) {
+  const result = { north: [], south: [], west: [], east: [] };
+  const EPS = 1e-6;
+  for (const other of buildings) {
+    if (other === rect || other.shape === "circle") continue;
+    if (Math.abs(rect.x - (other.x + other.w)) < EPS) {
+      pushOverlap(result.west, rect.y, rect.y + rect.h, other.y, other.y + other.h);
+    }
+    if (Math.abs(rect.x + rect.w - other.x) < EPS) {
+      pushOverlap(result.east, rect.y, rect.y + rect.h, other.y, other.y + other.h);
+    }
+    if (Math.abs(rect.y - (other.y + other.h)) < EPS) {
+      pushOverlap(result.south, rect.x, rect.x + rect.w, other.x, other.x + other.w);
+    }
+    if (Math.abs(rect.y + rect.h - other.y) < EPS) {
+      pushOverlap(result.north, rect.x, rect.x + rect.w, other.x, other.x + other.w);
+    }
+  }
+  return result;
+}
+
+function pushOverlap(list, aLo, aHi, bLo, bHi) {
+  const lo = Math.max(aLo, bLo);
+  const hi = Math.min(aHi, bHi);
+  if (hi > lo + 1e-6) list.push([lo, hi]);
+}
+
+// Gaps in [fullLo, fullHi] not covered by any interval in `covered`.
+function subtractIntervals(fullLo, fullHi, covered) {
+  if (covered.length === 0) return [[fullLo, fullHi]];
+  const sorted = covered.slice().sort((a, b) => a[0] - b[0]);
+  const gaps = [];
+  let cursor = fullLo;
+  for (const [lo, hi] of sorted) {
+    if (lo > cursor) gaps.push([cursor, Math.min(lo, fullHi)]);
+    cursor = Math.max(cursor, hi);
+  }
+  if (cursor < fullHi) gaps.push([cursor, fullHi]);
+  return gaps;
 }
 
 // In realistic mode, buildings render as rooftops (a shingled gradient with
@@ -741,7 +844,7 @@ function drawBuilding(view, building, realistic) {
     drawCircularBuilding(view, building, realistic);
     return;
   }
-  drawRectBuilding(view, building, realistic);
+  drawRectBuilding(view, building, realistic, view.buildings ?? []);
 }
 
 // Round obstacles (tanks, silos, planters, rotundas) get their own draw path
@@ -797,80 +900,15 @@ function drawCircularBuilding(view, circle, realistic) {
   ctx.restore();
 }
 
-function drawRectBuilding(view, rect, realistic) {
-  if (!realistic) {
-    drawRect(view, rect, "#59564e", "#b7b0a1", 1.2);
-    return;
-  }
-  const { ctx, scale } = view;
-  const [x, y] = worldToCanvas(view, [rect.x, rect.y + rect.h]);
-  const w = rect.w * scale;
-  const h = rect.h * scale;
-  const horizontal = w >= h;
-  const seed = hash2(rect.x * 1.7, rect.y * 2.3);
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.3)";
-  ctx.fillRect(x + w * 0.05, y + h * 0.08, w, h);
-
-  ctx.fillStyle = "#8a6a52";
-  if (horizontal) {
-    ctx.fillRect(x, y, w, h / 2);
-    ctx.fillStyle = "#6b5039";
-    ctx.fillRect(x, y + h / 2, w, h / 2);
-  } else {
-    ctx.fillRect(x, y, w / 2, h);
-    ctx.fillStyle = "#6b5039";
-    ctx.fillRect(x + w / 2, y, w / 2, h);
-  }
-
-  ctx.strokeStyle = "rgba(0,0,0,0.18)";
-  ctx.lineWidth = Math.max(0.6, Math.min(w, h) * 0.035);
-  const courseGap = Math.max(3, Math.min(w, h) * 0.16);
-  if (horizontal) {
-    for (let cx = x + courseGap; cx < x + w; cx += courseGap) {
-      ctx.beginPath();
-      ctx.moveTo(cx, y);
-      ctx.lineTo(cx, y + h);
-      ctx.stroke();
-    }
-  } else {
-    for (let cy = y + courseGap; cy < y + h; cy += courseGap) {
-      ctx.beginPath();
-      ctx.moveTo(x, cy);
-      ctx.lineTo(x + w, cy);
-      ctx.stroke();
-    }
-  }
-
-  ctx.strokeStyle = "#3f3122";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x, y, w, h);
-
-  ctx.strokeStyle = "rgba(230,215,190,0.6)";
-  ctx.lineWidth = Math.max(1, Math.min(w, h) * 0.07);
-  ctx.beginPath();
-  if (horizontal) {
-    ctx.moveTo(x, y + h / 2);
-    ctx.lineTo(x + w, y + h / 2);
-  } else {
-    ctx.moveTo(x + w / 2, y);
-    ctx.lineTo(x + w / 2, y + h);
-  }
-  ctx.stroke();
-
-  const chimneySize = Math.min(w, h) * 0.16;
-  if (chimneySize > 1.5) {
-    const along = 0.25 + seed * 0.5;
-    const across = 0.3 + hash2(rect.x + 4.1, rect.y + 8.3) * 0.4;
-    const ccx = horizontal ? x + w * along : x + w * across;
-    const ccy = horizontal ? y + h * across : y + h * along;
-    ctx.fillStyle = "#2c241a";
-    ctx.fillRect(ccx - chimneySize / 2, ccy - chimneySize / 2, chimneySize, chimneySize);
-    ctx.fillStyle = "rgba(255,255,255,0.15)";
-    ctx.fillRect(ccx - chimneySize / 2, ccy - chimneySize / 2, chimneySize * 0.4, chimneySize);
-  }
-  ctx.restore();
+// Buildings are plain Rect obstacles with no per-type art to hang a
+// "realistic roof" on, so rectangular buildings always render as a bordered
+// grey plane (matching the industrial_rooftop reference look) regardless of
+// the realistic/flat terrain toggle - that toggle only affects the ground
+// texture now. touchingIntervals keeps two flush-adjacent buildings reading
+// as one continuous surface instead of a doubled seam, without dropping the
+// border on the rest of an edge when a neighbor only partially covers it.
+function drawRectBuilding(view, rect, realistic, buildings) {
+  drawRect(view, rect, "#59564e", "#b7b0a1", 1.2, touchingIntervals(rect, buildings));
 }
 
 function drawCircle(view, center, radius, fill, stroke, width) {
@@ -908,7 +946,7 @@ function drawTrail(view, trail, rgb) {
   }
 }
 
-// Colors a tethered red drone shifts toward as exposure builds, at full
+// Colors a tethered red scout shifts toward as exposure builds, at full
 // exposure (about to be destroyed).
 const ALARM_RGB = [255, 45, 35];
 
@@ -936,8 +974,8 @@ function drawAgent(view, agentId, agent, highlighted = false, teamPerspective = 
     ];
   }
 
-  // In a team-perspective view you only know your own drones' sensor reach -
-  // an enemy drone's vision radius is drawn only in the global (no-perspective) view.
+  // In a team-perspective view you only know your own vehicles' sensor reach -
+  // an enemy vehicle's vision radius is drawn only in the global (no-perspective) view.
   const showRing = !teamPerspective || teamPerspective === agent.team;
   const soft = rgba(teamRgb, 0.1);
   if (showRing && agent.team === "blue") {
@@ -945,7 +983,7 @@ function drawAgent(view, agentId, agent, highlighted = false, teamPerspective = 
   } else if (showRing) {
     drawRing(view, agent.position, agent.scouting_radius, soft, rgba(THEME.redRgb, 0.22), 1);
   }
-  drawDroneIcon(view, drawPosition, agent.heading, agent.radius, color);
+  drawScoutIcon(view, drawPosition, agent.heading, agent.radius, color);
   if (highlighted) drawRing(view, agent.position, agent.radius * 3.8, THEME.transparent, rgba(THEME.goldRgb, 0.95), 2.4);
   drawLabel(view, agentId, drawPosition, color);
 }
@@ -970,7 +1008,7 @@ function drawDeathFade(view, agentId, agent) {
   const { ctx } = view;
   ctx.save();
   ctx.globalAlpha = 1 - elapsed / DEATH_FADE_MS;
-  drawDroneIcon(view, fade.position, fade.heading, agent.radius, color);
+  drawScoutIcon(view, fade.position, fade.heading, agent.radius, color);
   ctx.restore();
 }
 
@@ -1138,90 +1176,53 @@ function clipToWorld(view) {
   ctx.clip();
 }
 
-// Hand-drawn quadcopter icon with spinning rotor blades (spin driven by the
-// shared animation clock, not simulation steps, so it keeps turning smoothly
-// between server updates).
-function drawDroneIcon(view, position, heading, radius, color) {
+// Hand-drawn top-down ground vehicle icon: rounded body, four wheel ticks,
+// and a windshield wedge marking the front.
+function drawScoutIcon(view, position, heading, radius, color) {
   const { ctx, scale } = view;
   const [x, y] = worldToCanvas(view, position);
-  const size = Math.max(7, radius * scale * 2.15);
+  const size = Math.max(14, radius * scale * 4.3);
   const angle = -heading;
-  const forward = [Math.cos(angle), Math.sin(angle)];
-  const right = [Math.cos(angle + Math.PI / 2), Math.sin(angle + Math.PI / 2)];
-  const armX = size * 0.7;
-  const armY = size * 0.52;
-  const rotor = Math.max(2.4, size * 0.2);
-  const bladeLength = rotor * 1.95;
-  const bladeWidth = Math.max(1.1, rotor * 0.42);
-  const spin = view.animationTime * 0.04;
-  const bodyFill = color;
   const dark = THEME.dark;
   const light = THEME.light;
-  const rotorPoints = [];
+
+  const bodyLength = size * 0.95;
+  const bodyWidth = size * 0.56;
+  const bodyRadius = Math.min(bodyWidth, bodyLength) * 0.28;
+  const wheelLength = bodyLength * 0.32;
+  const wheelWidth = Math.max(1.4, size * 0.14);
+  const wheelInset = bodyWidth * 0.5;
 
   ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = rgba(THEME.lightRgb, 0.72);
-  ctx.lineWidth = Math.max(1.0, size * 0.09);
-  ctx.lineCap = "round";
 
+  // Four wheel ticks, top-down, at the body corners.
+  ctx.fillStyle = rgba(THEME.darkRgb, 0.85);
   for (const side of [-1, 1]) {
     for (const front of [-1, 1]) {
-      const rx = x + right[0] * armX * side + forward[0] * armY * front;
-      const ry = y + right[1] * armX * side + forward[1] * armY * front;
-      rotorPoints.push({ rx, ry, side, front });
-
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(rx, ry);
-      ctx.stroke();
+      ctx.save();
+      ctx.translate(front * bodyLength * 0.32, side * wheelInset);
+      ctx.fillRect(-wheelLength / 2, -wheelWidth / 2, wheelLength, wheelWidth);
+      ctx.restore();
     }
-  }
-
-  for (const rotorPoint of rotorPoints) {
-    const { rx, ry, side, front } = rotorPoint;
-    const rotorPhase = spin * (side === front ? 1 : -1) + side * 0.7 + front * 0.35;
-
-    ctx.beginPath();
-    ctx.arc(rx, ry, rotor * 1.12, 0, Math.PI * 2);
-    ctx.fillStyle = rgba(THEME.darkRgb, 0.84);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(0.8, size * 0.065);
-    ctx.fill();
-    ctx.stroke();
-
-    for (const offset of [0, Math.PI / 2]) {
-      ctx.beginPath();
-      ctx.ellipse(rx, ry, bladeLength, bladeWidth, rotorPhase + offset, 0, Math.PI * 2);
-      ctx.fillStyle = rgba(THEME.lightRgb, 0.28);
-      ctx.strokeStyle = rgba(THEME.lightRgb, 0.42);
-      ctx.lineWidth = 0.55;
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    ctx.beginPath();
-    ctx.arc(rx, ry, rotor * 0.34, 0, Math.PI * 2);
-    ctx.fillStyle = light;
-    ctx.strokeStyle = dark;
-    ctx.lineWidth = 0.55;
-    ctx.fill();
-    ctx.stroke();
   }
 
   ctx.beginPath();
-  ctx.ellipse(x, y, size * 0.26, size * 0.4, angle, 0, Math.PI * 2);
-  ctx.fillStyle = bodyFill;
+  ctx.roundRect(-bodyLength / 2, -bodyWidth / 2, bodyLength, bodyWidth, bodyRadius);
+  ctx.fillStyle = color;
   ctx.strokeStyle = light;
   ctx.lineWidth = Math.max(0.8, size * 0.09);
   ctx.fill();
   ctx.stroke();
 
+  // Windshield wedge marks the front of the vehicle.
   ctx.beginPath();
-  ctx.moveTo(x + forward[0] * size * 0.52, y + forward[1] * size * 0.52);
-  ctx.lineTo(x + right[0] * size * 0.16 - forward[0] * size * 0.08, y + right[1] * size * 0.16 - forward[1] * size * 0.08);
-  ctx.lineTo(x - right[0] * size * 0.16 - forward[0] * size * 0.08, y - right[1] * size * 0.16 - forward[1] * size * 0.08);
+  ctx.moveTo(bodyLength * 0.46, 0);
+  ctx.lineTo(bodyLength * 0.12, bodyWidth * 0.28);
+  ctx.lineTo(bodyLength * 0.12, -bodyWidth * 0.28);
   ctx.closePath();
   ctx.fillStyle = light;
   ctx.globalAlpha = 0.72;
@@ -1229,7 +1230,7 @@ function drawDroneIcon(view, position, heading, radius, color) {
   ctx.globalAlpha = 1;
 
   ctx.beginPath();
-  ctx.arc(x, y, size * 0.11, 0, Math.PI * 2);
+  ctx.arc(0, 0, size * 0.1, 0, Math.PI * 2);
   ctx.fillStyle = dark;
   ctx.strokeStyle = light;
   ctx.lineWidth = 0.55;
@@ -1254,12 +1255,78 @@ function drawTerrain(view, sceneState, worldW, worldH) {
     ctx.globalAlpha = 0.72;
     ctx.drawImage(terrainImage, offsetX, offsetY, width, height);
   } else {
-    const gradient = ctx.createLinearGradient(offsetX, offsetY, offsetX + width, offsetY + height);
-    gradient.addColorStop(0, "#2b2b2d");
-    gradient.addColorStop(0.45, "#313133");
-    gradient.addColorStop(1, "#242426");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(offsetX, offsetY, width, height);
+    // No custom terrain image uploaded for this instance - render an actual
+    // dirt texture instead of a flat placeholder gradient. Flat/conceptual
+    // mode doesn't go through this path at all (drawTerrain no-ops when
+    // terrain isn't enabled), so it's untouched by this.
+    drawDirtTexture(view, worldW, worldH);
+  }
+  ctx.restore();
+}
+
+// The actual uploaded ground sprites, tiled across the world: grass
+// everywhere, except a one-cell dirt halo around every building (a cleared
+// lot, not a building sitting in the middle of a lawn). Loaded once at
+// module scope, same pattern as the per-instance terrain image above.
+function loadGroundSprite(path) {
+  const state = { image: new Image(), loaded: false, tileCache: { px: 0, canvas: null } };
+  state.image.onload = () => {
+    state.loaded = true;
+  };
+  state.image.src = path;
+  return state;
+}
+
+const dirtGround = loadGroundSprite("/static/assets/ground/dirt_dark.png");
+const grassGround = loadGroundSprite("/static/assets/ground/grass.png");
+
+// createPattern repeats a source image at its own native pixel size, which
+// doesn't track the view's world-to-canvas scale - so a tile canvas is
+// pre-rendered at the current scale's pixel size and re-cached only when
+// that pixel size actually changes (e.g. on window resize), not every frame.
+function getGroundTile(sprite, tilePx) {
+  const rounded = Math.max(4, Math.round(tilePx));
+  if (sprite.tileCache.px === rounded && sprite.tileCache.canvas) {
+    return sprite.tileCache.canvas;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = rounded;
+  canvas.height = rounded;
+  canvas.getContext("2d").drawImage(sprite.image, 0, 0, rounded, rounded);
+  sprite.tileCache = { px: rounded, canvas };
+  return canvas;
+}
+
+function fillGroundPattern(view, sprite, fallbackColor, region) {
+  const { ctx, scale } = view;
+  if (!sprite.loaded) {
+    ctx.fillStyle = fallbackColor;
+  } else {
+    const tile = getGroundTile(sprite, GROUND_CELL_WORLD_SIZE * scale);
+    ctx.fillStyle = ctx.createPattern(tile, "repeat");
+  }
+  ctx.fillRect(region.x, region.y, region.w, region.h);
+}
+
+function drawDirtTexture(view, worldW, worldH) {
+  const { ctx, scale, offsetX, offsetY, buildings } = view;
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  fillGroundPattern(view, grassGround, THEME.dirtFloor, { x: 0, y: 0, w: worldW * scale, h: worldH * scale });
+
+  // Dirt halo: each building's footprint expanded by one ground cell on
+  // every side (the building sprite drawn afterward covers the footprint
+  // interior, leaving just the one-cell ring of dirt visible around it).
+  const margin = GROUND_CELL_WORLD_SIZE;
+  for (const building of buildings ?? []) {
+    if (building.shape === "circle") {
+      continue; // circular obstacles aren't produced by the current generator; skip for now
+    }
+    const hx = (building.x - margin) * scale;
+    const hy = (worldH - (building.y + building.h + margin)) * scale;
+    const hw = (building.w + margin * 2) * scale;
+    const hh = (building.h + margin * 2) * scale;
+    fillGroundPattern(view, dirtGround, THEME.dirtFloor, { x: hx, y: hy, w: hw, h: hh });
   }
   ctx.restore();
 }

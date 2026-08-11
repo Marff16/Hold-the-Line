@@ -11,20 +11,17 @@ from src.core.geometry import (
     segment_intersects_obstacle,
 )
 from src.core.instance_loader import load_instance
-from src.core.instances import (
-    FIXED_INSTANCE_FACTORIES,
-    create_random_facility,
-)
+from src.core.instances import create_packed_facility, create_random_facility
 from src.core.map_generator import validate_map
 
 
-FIXED_INSTANCE_IDS = list(FIXED_INSTANCE_FACTORIES)
+FIXED_INSTANCE_IDS = ["instance1"]
 
 
 class FixedInstanceTests(unittest.TestCase):
     def test_all_fixed_instances_validate(self):
-        for instance_id, factory in FIXED_INSTANCE_FACTORIES.items():
-            config = factory()
+        for instance_id in FIXED_INSTANCE_IDS:
+            config = load_instance(instance_id)
             with self.subTest(instance=instance_id):
                 result = validate_map(config, min_buildings=5)
                 self.assertTrue(result.valid, f"{instance_id}: {result.reasons}")
@@ -43,15 +40,15 @@ class FixedInstanceTests(unittest.TestCase):
                 self.assertEqual(set(rewards), set(env.possible_agents))
 
     def test_assets_not_inside_obstacles(self):
-        for instance_id, factory in FIXED_INSTANCE_FACTORIES.items():
-            config = factory()
+        for instance_id in FIXED_INSTANCE_IDS:
+            config = load_instance(instance_id)
             for index, asset in enumerate(config.assets):
                 with self.subTest(instance=instance_id, asset=index):
                     self.assertFalse(point_in_any_obstacle(asset.center_array, config.buildings))
 
     def test_spawn_zone_centers_not_inside_obstacles(self):
-        for instance_id, factory in FIXED_INSTANCE_FACTORIES.items():
-            config = factory()
+        for instance_id in FIXED_INSTANCE_IDS:
+            config = load_instance(instance_id)
             with self.subTest(instance=instance_id, zone="blue"):
                 self.assertFalse(point_in_any_obstacle(config.blue_spawn_zone.center, config.buildings))
             for index, zone in enumerate(config.red_spawn_zones):
@@ -59,8 +56,8 @@ class FixedInstanceTests(unittest.TestCase):
                     self.assertFalse(point_in_any_obstacle(zone.center, config.buildings))
 
     def test_obstacles_stay_within_world_bounds(self):
-        for instance_id, factory in FIXED_INSTANCE_FACTORIES.items():
-            config = factory()
+        for instance_id in FIXED_INSTANCE_IDS:
+            config = load_instance(instance_id)
             width, height = config.world_size
             for index, obstacle in enumerate(config.buildings):
                 with self.subTest(instance=instance_id, obstacle=index):
@@ -75,10 +72,6 @@ class FixedInstanceTests(unittest.TestCase):
                         self.assertGreaterEqual(obstacle.min_y, 0.0)
                         self.assertLessEqual(obstacle.max_x, width)
                         self.assertLessEqual(obstacle.max_y, height)
-
-    def test_fixed_industrial_facility_has_circular_obstacles(self):
-        config = FIXED_INSTANCE_FACTORIES["test2"]()
-        self.assertTrue(any(isinstance(obstacle, Circle) for obstacle in config.buildings))
 
     def test_line_of_sight_blocked_by_circular_obstacle(self):
         blocker = Circle((5.0, 5.0), 2.0)
@@ -131,6 +124,24 @@ class RandomFacilityTests(unittest.TestCase):
 
     def test_random_instance_runs_in_env(self):
         config = create_random_facility(seed=11)
+        env = parallel_env(map_config=config, max_episode_steps=3)
+        observations, infos = env.reset(seed=1)
+        actions = {agent: np.zeros(2, dtype=np.float32) for agent in env.agents}
+        observations, rewards, terminations, truncations, infos = env.step(actions)
+        self.assertEqual(set(rewards), set(env.possible_agents))
+
+
+class PackedFacilityTests(unittest.TestCase):
+    def test_packed_instances_validate_for_multiple_seeds(self):
+        for seed in range(8):
+            with self.subTest(seed=seed):
+                config = create_packed_facility(seed=seed)
+                result = validate_map(config)
+                self.assertTrue(result.valid, f"seed {seed}: {result.reasons}")
+                self.assertGreaterEqual(result.approach_routes, 2)
+
+    def test_packed_instance_runs_in_env(self):
+        config = create_packed_facility(seed=11)
         env = parallel_env(map_config=config, max_episode_steps=3)
         observations, infos = env.reset(seed=1)
         actions = {agent: np.zeros(2, dtype=np.float32) for agent in env.agents}

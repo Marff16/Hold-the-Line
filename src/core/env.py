@@ -44,7 +44,7 @@ class DroneState:
     radius: float
     alive: bool = True
     info_collected: float = 0.0
-    # Seconds a red drone has spent continuously tethered by a blue drone's
+    # Seconds a red scout has spent continuously tethered by a blue vehicle's
     # detection (unused for blue agents). Reset to 0 the instant the tether
     # breaks, so ducking behind a building fully resets the danger.
     exposure: float = 0.0
@@ -232,7 +232,7 @@ class HoldTheLineEnv(ParallelEnv):
         self._last_detections = detections
         intercepted_reds = self._apply_interceptions(detections)
         # Intercept bonus is a team reward: split evenly across blue agents rather
-        # than credited to whichever drone made contact, since detection/positioning
+        # than credited to whichever vehicle made contact, since detection/positioning
         # is a team effort in this MVP (no credit assignment model yet).
         for red_agent in intercepted_reds:
             rewards[red_agent] -= 1.0
@@ -342,7 +342,7 @@ class HoldTheLineEnv(ParallelEnv):
         return in_range and line_of_sight_clear(red_state.pos, blue_state.pos, self.buildings)
 
     def _apply_interceptions(self, detections: dict[str, list[str]]) -> list[str]:
-        # A red drone isn't destroyed the instant it's spotted - it has to stay
+        # A red scout isn't destroyed the instant it's spotted - it has to stay
         # tethered (inside detection_radius with clear line of sight, the same
         # condition that draws the detection line in the UI) continuously for
         # destroy_time seconds. Slipping behind a building breaks line of sight,

@@ -206,14 +206,14 @@ class HoldTheLineTests(unittest.TestCase):
             self.assertGreater(env._states[red_agent].pos[1], env.world_size[1] * 0.85)
 
     def test_spawn_positions_are_evenly_spaced_across_bands(self):
-        env = parallel_env(map_config=load_instance("test1"))
+        env = parallel_env(map_config=load_instance("instance1"))
         env.reset(seed=123)
 
         blue_xs = [env._states[agent].pos[0] for agent in env.blue_agents]
         red_xs = [env._states[agent].pos[0] for agent in env.red_agents]
 
-        np.testing.assert_allclose(blue_xs, [60.0], atol=1e-5)
-        np.testing.assert_allclose(np.diff(red_xs), [108.1], atol=1e-4)
+        np.testing.assert_allclose(blue_xs, [1.0, 199.0], atol=1e-5)
+        np.testing.assert_allclose(np.diff(red_xs), [198.0], atol=1e-4)
 
     def test_render_state_includes_team_shared_visibility(self):
         env = parallel_env()

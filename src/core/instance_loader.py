@@ -96,6 +96,61 @@ def parse_instance(data: dict[str, Any], base_dir: Path | None = None, fallback_
     )
 
 
+def dump_instance(config: FixedMapConfig) -> dict[str, Any]:
+    """Inverse of ``parse_instance`` - serialize a ``FixedMapConfig`` back to
+    the JSON schema instance files use."""
+
+    return {
+        "name": config.name,
+        "world_size": list(config.world_size),
+        "red_spawn_zones": [_rect_dict(zone) for zone in config.red_spawn_zones],
+        "blue_spawn_zone": _rect_dict(config.blue_spawn_zone),
+        "protected_zone": _rect_dict(config.protected_zone),
+        "objectives": [
+            {"x": float(asset.center[0]), "y": float(asset.center[1]), "radius": asset.radius}
+            for asset in config.assets
+        ],
+        "buildings": [_obstacle_dict(building) for building in config.buildings],
+        "drones": {
+            "blue": {
+                "count": config.blue_drones.count,
+                "radius": config.blue_drones.radius,
+                "max_speed": config.blue_drones.max_speed,
+                "detection_radius": config.blue_drones.detection_radius,
+                "intercept_radius": config.blue_drones.intercept_radius,
+                "destroy_time": config.blue_drones.destroy_time,
+            },
+            "red": {
+                "count": config.red_drones.count,
+                "radius": config.red_drones.radius,
+                "max_speed": config.red_drones.max_speed,
+                "scouting_radius": config.red_drones.scouting_radius,
+                "info_threshold": config.red_drones.info_threshold,
+            },
+        },
+    }
+
+
+def save_instance(config: FixedMapConfig, instance_id: str, instance_dir: Path = INSTANCE_DIR) -> Path:
+    """Serialize ``config`` and write it to ``<instance_dir>/<instance_id>.json``."""
+
+    path = instance_dir / f"{instance_id}.json"
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(dump_instance(config), file, indent=2)
+        file.write("\n")
+    return path
+
+
+def _rect_dict(rect: Rect) -> dict[str, float]:
+    return {"x": rect.x, "y": rect.y, "w": rect.w, "h": rect.h}
+
+
+def _obstacle_dict(obstacle: Obstacle) -> dict[str, Any]:
+    if isinstance(obstacle, Circle):
+        return {"shape": "circle", "x": float(obstacle.center[0]), "y": float(obstacle.center[1]), "radius": obstacle.radius}
+    return _rect_dict(obstacle)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)

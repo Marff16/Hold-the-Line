@@ -13,7 +13,7 @@ from src.core.geometry import Circle, Obstacle, Rect, obstacle_contains_point
 class BlueDroneConfig:
     count: int = 2
     radius: float = 1.0
-    max_speed: float = 18.0
+    max_speed: float = 10.0
     detection_radius: float = 18.0
     intercept_radius: float = 2.0
     # Seconds a red drone must stay continuously tethered (inside detection_radius
@@ -26,7 +26,7 @@ class BlueDroneConfig:
 class RedDroneConfig:
     count: int = 2
     radius: float = 1.0
-    max_speed: float = 15.0
+    max_speed: float = 8.0
     scouting_radius: float = 10.0
     info_threshold: float = 5.0
 

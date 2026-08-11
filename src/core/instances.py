@@ -1,7 +1,7 @@
 """Realistic fixed and procedural instance constructors for Hold The Line.
 
-Each constructor returns a ``FixedMapConfig`` describing a small low-altitude
-drone environment in meters (1 simulation unit == 1 meter): buildings and
+Each constructor returns a ``FixedMapConfig`` describing a small ground
+scout vehicle environment in meters (1 simulation unit == 1 meter): buildings and
 round obstacles, a protected zone, sensitive assets, a red spawn area near
 the top of the map and a blue spawn area near the bottom, all reachable via
 at least two approach routes. See ``map_generator.validate_map`` for the
@@ -15,40 +15,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.core.geometry import Circle, Obstacle, Rect, obstacles_overlap
-from src.core.map_config import BlueDroneConfig, FixedMapConfig, RedDroneConfig
+from src.core.map_config import FixedMapConfig
 from src.core.map_generator import MapValidationResult, validate_map
-
-
-def create_fixed_industrial_facility() -> FixedMapConfig:
-    """Warehouse-district benchmark: rectangular halls plus a few round tanks."""
-
-    return FixedMapConfig(
-        name="Test 2",
-        world_size=(200.0, 200.0),
-        red_spawn_zones=[Rect(80.0, 180.0, 40.0, 15.0)],
-        blue_spawn_zone=Rect(80.0, 5.0, 40.0, 15.0),
-        protected_zone=Rect(75.0, 55.0, 50.0, 40.0),
-        assets=[
-            Circle((90.0, 75.0), 1.5),
-            Circle((110.0, 75.0), 1.5),
-        ],
-        blue_drones=BlueDroneConfig(count=2),
-        red_drones=RedDroneConfig(count=4),
-        buildings=[
-            Rect(20.0, 135.0, 50.0, 18.0),
-            Rect(130.0, 135.0, 50.0, 18.0),
-            Rect(35.0, 95.0, 35.0, 16.0),
-            Rect(130.0, 95.0, 35.0, 16.0),
-            Rect(85.0, 120.0, 30.0, 18.0),
-            Rect(20.0, 45.0, 45.0, 18.0),
-            Rect(135.0, 45.0, 45.0, 18.0),
-            # Round storage tanks give the plant a less uniform silhouette than
-            # an all-rectangle warehouse row, without blocking any corridor.
-            Circle((45.0, 80.0), 5.0),
-            Circle((155.0, 80.0), 5.0),
-            Circle((100.0, 165.0), 8.0),
-        ],
-    )
+from src.core.tile_map import BUILDING_SIZED_BLOCK_POOL, PackedBlock, pack_blocks
 
 
 def create_random_facility(
@@ -346,9 +315,95 @@ def _generate_routed_facility_candidate(
     return config, routes
 
 
-FIXED_INSTANCE_FACTORIES = {
-    "test2": create_fixed_industrial_facility,
-}
+def create_packed_facility(
+    seed: int | None = None,
+    world_size: tuple[float, float] = (200.0, 200.0),
+    cell_size: float = 4.0,
+    margin_rows: int = 5,
+    blue_spawn_rows: int = 4,
+    protected_rows: int = 6,
+    max_attempts: int = 100,
+) -> FixedMapConfig:
+    """Procedurally generate a facility by skyline-packing building-sized
+    rectangles directly (see ``tile_map.pack_blocks``) instead of carving
+    explicit streets - the gaps left between packed blocks are the implicit
+    streets, and each packed block becomes a literal ``Rect`` obstacle.
+    Validated the same way as the other procedural facilities in this module.
+    """
+
+    rng = np.random.default_rng(seed)
+    for _ in range(max_attempts):
+        candidate = _generate_packed_facility_candidate(
+            rng, world_size, cell_size, margin_rows, blue_spawn_rows, protected_rows
+        )
+        if validate_map(candidate).valid:
+            return candidate
+
+    raise RuntimeError(f"could not generate a valid packed facility after {max_attempts} attempts")
+
+
+def _generate_packed_facility_candidate(
+    rng: np.random.Generator,
+    world_size: tuple[float, float],
+    cell_size: float,
+    margin_rows: int,
+    blue_spawn_rows: int,
+    protected_rows: int,
+) -> FixedMapConfig:
+    width, height = world_size
+    cols = int(width / cell_size)
+    rows = int(height / cell_size)
+
+    packed = pack_blocks(
+        rng,
+        cols,
+        rows,
+        footprint_pool=BUILDING_SIZED_BLOCK_POOL,
+        margin_rows_top=margin_rows,
+        margin_rows_bottom=blue_spawn_rows + protected_rows,
+    )
+    buildings: list[Obstacle] = [_packed_block_to_rect(block, cell_size, height) for block in packed]
+
+    red_spawn_zones = [Rect(0.0, height - margin_rows * cell_size, width, margin_rows * cell_size)]
+    blue_spawn_zone = Rect(0.0, 0.0, width, blue_spawn_rows * cell_size)
+
+    # Protected zone lives in the band reserved above the blue spawn - pack_blocks
+    # never places a building there, so it can't collide with one by construction.
+    protected_w = width * 0.4
+    protected_h = max(cell_size, (protected_rows - 2) * cell_size)
+    protected_zone = Rect(
+        (width - protected_w) / 2.0,
+        blue_spawn_rows * cell_size + cell_size,
+        protected_w,
+        protected_h,
+    )
+    assets = [
+        Circle(
+            (
+                float(rng.uniform(protected_zone.min_x + 5.0, protected_zone.max_x - 5.0)),
+                float(rng.uniform(protected_zone.min_y + 5.0, protected_zone.max_y - 5.0)),
+            ),
+            1.5,
+        )
+        for _ in range(2)
+    ]
+
+    return FixedMapConfig(
+        name="packed_facility",
+        world_size=world_size,
+        buildings=buildings,
+        protected_zone=protected_zone,
+        assets=assets,
+        red_spawn_zones=red_spawn_zones,
+        blue_spawn_zone=blue_spawn_zone,
+    )
+
+
+def _packed_block_to_rect(block: PackedBlock, cell_size: float, world_height: float) -> Rect:
+    row, col = block.origin
+    x = col * cell_size
+    y = world_height - (row + block.height) * cell_size
+    return Rect(x, y, block.width * cell_size, block.height * cell_size)
 
 
 def validate_instance(config: FixedMapConfig, min_buildings: int = 0) -> MapValidationResult:
