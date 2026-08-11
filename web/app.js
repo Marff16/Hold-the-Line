@@ -1317,16 +1317,21 @@ function drawDirtTexture(view, worldW, worldH) {
   // Dirt halo: each building's footprint expanded by one ground cell on
   // every side (the building sprite drawn afterward covers the footprint
   // interior, leaving just the one-cell ring of dirt visible around it).
+  // Clamped to world bounds - a building near the map edge must not get a
+  // halo that bleeds past the grid into the letterbox background.
   const margin = GROUND_CELL_WORLD_SIZE;
+  const worldPxW = worldW * scale;
+  const worldPxH = worldH * scale;
   for (const building of buildings ?? []) {
     if (building.shape === "circle") {
       continue; // circular obstacles aren't produced by the current generator; skip for now
     }
-    const hx = (building.x - margin) * scale;
-    const hy = (worldH - (building.y + building.h + margin)) * scale;
-    const hw = (building.w + margin * 2) * scale;
-    const hh = (building.h + margin * 2) * scale;
-    fillGroundPattern(view, dirtGround, THEME.dirtFloor, { x: hx, y: hy, w: hw, h: hh });
+    const x0 = Math.max(0, (building.x - margin) * scale);
+    const y0 = Math.max(0, (worldH - (building.y + building.h + margin)) * scale);
+    const x1 = Math.min(worldPxW, (building.x + building.w + margin) * scale);
+    const y1 = Math.min(worldPxH, (worldH - (building.y - margin)) * scale);
+    if (x1 <= x0 || y1 <= y0) continue;
+    fillGroundPattern(view, dirtGround, THEME.dirtFloor, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   }
   ctx.restore();
 }
