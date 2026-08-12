@@ -73,6 +73,12 @@ class HoldTheLineEnv(ParallelEnv):
         acceleration_scale: float = 72.0,
         velocity_damping: float = 0.98,
         movement_penalty: float = 0.001,
+        red_time_penalty: float = 0.0003,
+        red_evasion_reward: float = 0.5,
+        red_discovery_cell_size: float = 5.0,
+        red_discovery_reward_scale: float = 8.0,
+        building_collision_penalty: float = 0.01,
+        red_progress_reward_scale: float = 0.05,
     ) -> None:
         self.render_mode = render_mode
         self.map_config = map_config or default_fixed_map()
@@ -80,7 +86,35 @@ class HoldTheLineEnv(ParallelEnv):
         self.max_episode_steps = max_episode_steps
         self.acceleration_scale = acceleration_scale
         self.velocity_damping = velocity_damping
+        # Blue still pays the old per-magnitude movement penalty; Red instead
+        # pays a flat per-step time cost (see _apply_movement) - moving isn't
+        # penalized for Red, but dawdling is, since Red is meant to cover
+        # ground.
         self.movement_penalty = movement_penalty
+        self.red_time_penalty = red_time_penalty
+        # Reward for breaking a blue tether (exposure > 0) before being
+        # destroyed - i.e. successfully evading after being spotted.
+        self.red_evasion_reward = red_evasion_reward
+        # Both teams pay this the instant their movement is blocked by a
+        # building this step (not the world boundary) - without it, bumping
+        # into an obstacle and just sitting there is free, so there's no
+        # pressure to learn to route around buildings instead of repeatedly
+        # walking into them.
+        self.building_collision_penalty = building_collision_penalty
+        # Potential-based shaping: reward for closing the distance to the
+        # front line while still on Red's own side (0 once south of it, where
+        # the real discovery reward takes over). Doesn't change the optimal
+        # policy (Ng et al. 1999) - it's a compass, not a new objective - but
+        # unlike the action bias, it can't be trained away, since moving
+        # south is directly rewarded rather than just nudged.
+        self.red_progress_reward_scale = red_progress_reward_scale
+        self.red_discovery_cell_size = red_discovery_cell_size
+        # Fully discovering the map sums to red_discovery_reward_scale over
+        # the episode - needs to be large enough to actually outweigh the
+        # accumulated red_time_penalty over a long episode, or there's
+        # nothing for the agent to differentiate "explored a lot" from
+        # "explored nothing" by.
+        self.red_discovery_reward_scale = red_discovery_reward_scale
 
         self.num_blue = self.map_config.blue_drones.count
         self.num_red = self.map_config.red_drones.count
@@ -141,6 +175,7 @@ class HoldTheLineEnv(ParallelEnv):
         self._red_success = False
         self._states = {}
         self._last_detections = {agent: [] for agent in self.blue_agents}
+        self._init_red_discovery_grid()
 
         blue_positions = self._spawn_positions(
             [self.map_config.blue_spawn_zone],
@@ -230,7 +265,7 @@ class HoldTheLineEnv(ParallelEnv):
 
         detections = self._compute_detections()
         self._last_detections = detections
-        intercepted_reds = self._apply_interceptions(detections)
+        rewards, intercepted_reds = self._apply_interceptions(detections, rewards)
         # Intercept bonus is a team reward: split evenly across blue agents rather
         # than credited to whichever vehicle made contact, since detection/positioning
         # is a team effort in this MVP (no credit assignment model yet).
@@ -242,6 +277,8 @@ class HoldTheLineEnv(ParallelEnv):
         info_delta = self._apply_scouting()
         for red_agent, delta in info_delta.items():
             rewards[red_agent] += delta / self.red_info_threshold
+
+        rewards = self._apply_red_discovery(rewards)
 
         successful_reds = [
             red_agent
@@ -313,7 +350,17 @@ class HoldTheLineEnv(ParallelEnv):
             else:
                 state.pos = candidate_pos.astype(np.float32)
 
-            rewards[agent] -= self.movement_penalty * float(np.linalg.norm(action))
+            if obstacle_hit:
+                rewards[agent] -= self.building_collision_penalty
+
+            if agent.startswith("red_"):
+                rewards[agent] -= self.red_time_penalty
+                if old_pos[1] > self.front_line_y:
+                    old_dist = old_pos[1] - self.front_line_y
+                    new_dist = max(0.0, state.pos[1] - self.front_line_y)
+                    rewards[agent] += self.red_progress_reward_scale * (old_dist - new_dist)
+            else:
+                rewards[agent] -= self.movement_penalty * float(np.linalg.norm(action))
 
         return rewards
 
@@ -341,14 +388,17 @@ class HoldTheLineEnv(ParallelEnv):
         in_range = distance(red_state.pos, blue_state.pos) <= self.blue_detection_radius
         return in_range and line_of_sight_clear(red_state.pos, blue_state.pos, self.buildings)
 
-    def _apply_interceptions(self, detections: dict[str, list[str]]) -> list[str]:
+    def _apply_interceptions(
+        self, detections: dict[str, list[str]], rewards: dict[str, float]
+    ) -> tuple[dict[str, float], list[str]]:
         # A red scout isn't destroyed the instant it's spotted - it has to stay
         # tethered (inside detection_radius with clear line of sight, the same
         # condition that draws the detection line in the UI) continuously for
         # destroy_time seconds. Slipping behind a building breaks line of sight,
         # which drops it out of `detections` and resets exposure to zero, so
         # hiding around a corner fully resets the danger rather than just
-        # pausing it.
+        # pausing it. Breaking the tether alive (exposure was > 0, now back to
+        # 0) is a successful evasion, and gets its own reward.
         tethered_reds = {red_agent for red_agents in detections.values() for red_agent in red_agents}
         destroyed: list[str] = []
         for red_agent in self.red_agents:
@@ -362,8 +412,10 @@ class HoldTheLineEnv(ParallelEnv):
                     red_state.vel = np.zeros(2, dtype=np.float32)
                     destroyed.append(red_agent)
             else:
+                if red_state.exposure > 0.0:
+                    rewards[red_agent] += self.red_evasion_reward
                 red_state.exposure = 0.0
-        return destroyed
+        return rewards, destroyed
 
     def _apply_scouting(self) -> dict[str, float]:
         deltas: dict[str, float] = {}
@@ -387,6 +439,61 @@ class HoldTheLineEnv(ParallelEnv):
             else:
                 deltas[red_agent] = 0.0
         return deltas
+
+    def _init_red_discovery_grid(self) -> None:
+        # Discretizes only Red's "foreign" territory - the far side of the
+        # front line, i.e. Blue's home half - into a discovered/undiscovered
+        # grid. Red's own home half is never in this grid at all, mirroring
+        # the fog-of-war convention used elsewhere (you already know your own
+        # side): there's nothing to reward discovering there.
+        width, height = self.map_config.world_size
+        cell = self.red_discovery_cell_size
+        cols = max(1, int(np.ceil(width / cell)))
+        rows = max(1, int(np.ceil(height / cell)))
+        row_centers = (np.arange(rows, dtype=np.float32) + 0.5) * cell
+        # Red spawns at high y (see _default_front_line_y) - its foreign
+        # territory is the low-y side, below the front line.
+        discoverable_rows = row_centers < self.front_line_y
+
+        self._discovery_cell_size = cell
+        self._discovery_cols = cols
+        self._discovery_rows = rows
+        self._discoverable_row_mask = discoverable_rows
+        self._red_discovered = np.zeros((rows, cols), dtype=bool)
+        self._red_discoverable_total = float(discoverable_rows.sum() * cols)
+
+    def _apply_red_discovery(self, rewards: dict[str, float]) -> dict[str, float]:
+        if self._red_discoverable_total <= 0:
+            return rewards
+
+        cell = self._discovery_cell_size
+        for red_agent in self.red_agents:
+            red_state = self._states[red_agent]
+            if not red_state.alive:
+                continue
+
+            radius = self.red_scouting_radius
+            min_col = max(0, int((red_state.pos[0] - radius) // cell))
+            max_col = min(self._discovery_cols - 1, int((red_state.pos[0] + radius) // cell))
+            min_row = max(0, int((red_state.pos[1] - radius) // cell))
+            max_row = min(self._discovery_rows - 1, int((red_state.pos[1] + radius) // cell))
+
+            newly_discovered = 0
+            for row in range(min_row, max_row + 1):
+                if not self._discoverable_row_mask[row]:
+                    continue
+                for col in range(min_col, max_col + 1):
+                    if self._red_discovered[row, col]:
+                        continue
+                    cell_center = np.array([(col + 0.5) * cell, (row + 0.5) * cell], dtype=np.float32)
+                    if distance(cell_center, red_state.pos) <= radius:
+                        self._red_discovered[row, col] = True
+                        newly_discovered += 1
+
+            if newly_discovered:
+                rewards[red_agent] += self.red_discovery_reward_scale * newly_discovered / self._red_discoverable_total
+
+        return rewards
 
     def _observe_all(self) -> dict[str, Array]:
         return {agent: self._observe(agent) for agent in self.agents}

@@ -6,3 +6,4 @@ renders/
 *.egg-info/
 dist/
 build/
+checkpoints/

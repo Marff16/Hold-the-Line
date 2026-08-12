@@ -12,7 +12,15 @@ class WebAppTests(unittest.TestCase):
         snapshot = simulation.snapshot()
         self.assertEqual(snapshot["step"], 0)
         self.assertEqual(snapshot["controls"]["speed"], 1)
-        self.assertEqual(snapshot["controls"]["policy_options"], ["Random"])
+        # "Learned Blue" only appears once a trained checkpoint exists on
+        # disk (checkpoints/blue_actor_critic.pt) - don't hard-fail the test
+        # depending on whether training has run in this environment.
+        self.assertIn("Random", snapshot["controls"]["policy_options_blue"])
+        self.assertIn("Avoider", snapshot["controls"]["policy_options_blue"])
+        self.assertIn("Random", snapshot["controls"]["policy_options_red"])
+        self.assertIn("Avoider", snapshot["controls"]["policy_options_red"])
+        self.assertNotIn("Learned Blue", snapshot["controls"]["policy_options_red"])
+        self.assertNotIn("Learned Red", snapshot["controls"]["policy_options_blue"])
         self.assertEqual(snapshot["controls"]["policy_blue"], "Random")
         self.assertEqual(snapshot["controls"]["policy_red"], "Random")
         self.assertEqual(len(snapshot["agents"]), 4)

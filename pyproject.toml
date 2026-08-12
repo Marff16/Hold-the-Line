@@ -16,6 +16,7 @@ dependencies = [
 rl = [
     "gymnasium>=0.29",
     "pettingzoo>=1.24",
+    "torch>=2.2",
 ]
 render = [
     "matplotlib>=3.8",
@@ -27,6 +28,7 @@ web = [
 dev = [
     "gymnasium>=0.29",
     "pettingzoo>=1.24",
+    "torch>=2.2",
     "matplotlib>=3.8",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",

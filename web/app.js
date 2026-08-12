@@ -358,10 +358,8 @@ function syncControls() {
   if (!controlsReady) {
     policyBlue.innerHTML = "";
     policyRed.innerHTML = "";
-    control.policy_options.forEach((option) => {
-      policyBlue.append(new Option(option, option));
-      policyRed.append(new Option(option, option));
-    });
+    control.policy_options_blue.forEach((option) => policyBlue.append(new Option(option, option)));
+    control.policy_options_red.forEach((option) => policyRed.append(new Option(option, option)));
     controlsReady = true;
   }
 

@@ -14,10 +14,15 @@ from pydantic import BaseModel
 
 from src import parallel_env
 from src.core.instance_loader import INSTANCE_DIR, list_instances, load_instance
-from src.policies import RandomPolicy
+from src.policies import LearnedPolicy, ObstacleAvoidingPolicy, RandomPolicy
 
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+CHECKPOINT_DIR = Path(__file__).resolve().parents[2] / "checkpoints"
+LEARNED_CHECKPOINTS = {
+    "Learned Blue": ("blue", CHECKPOINT_DIR / "blue_actor_critic.pt"),
+    "Learned Red": ("red", CHECKPOINT_DIR / "red_actor_critic.pt"),
+}
 
 
 class ControlRequest(BaseModel):
@@ -58,23 +63,25 @@ class ConnectionManager:
 class WebSimulation:
     # Policies are chosen per team, not per drone: agents on the same team
     # are homogeneous and share one policy (standard multi-agent parameter
-    # sharing). "Random" is the only option for both teams for now.
-    policy_options = [
-        "Random",
-    ]
+    # sharing). The actual available set is built per-instance in
+    # _reset_env() (self.policies) - "Learned Blue" only shows up once a
+    # checkpoint actually exists on disk. POLICY_TEAM_RESTRICTIONS keeps a
+    # team-specific learned policy (trained on that team's own obs_dim) out
+    # of the other team's dropdown, where it would just error out.
+    DEFAULT_POLICY = "Random"
+    POLICY_TEAM_RESTRICTIONS: dict[str, str] = {name: team for name, (team, _path) in LEARNED_CHECKPOINTS.items()}
 
     def __init__(self) -> None:
         self.manager = ConnectionManager()
         self.lock = asyncio.Lock()
         self.playing = False
         self.speed = 1
-        self.policy_blue = self.policy_options[0]
-        self.policy_red = self.policy_options[0]
+        self.policy_blue = self.DEFAULT_POLICY
+        self.policy_red = self.DEFAULT_POLICY
         self.selected_agent: str | None = None
         self.terrain_enabled = False
         available = list_instances()
         self.instance_id = available[0]["id"] if available else "default"
-        self.policies = {"Random": RandomPolicy(seed=11)}
         self._reset_env()
 
     def _reset_env(self) -> None:
@@ -85,6 +92,33 @@ class WebSimulation:
         self.env.reset(seed=7)
         if self.selected_agent not in self.env.possible_agents:
             self.selected_agent = None
+        # "Avoider" needs the current instance's buildings, so it's rebuilt
+        # here rather than once at startup like RandomPolicy.
+        self.policies = {
+            "Random": RandomPolicy(seed=11),
+            "Avoider": ObstacleAvoidingPolicy(self.env.map_config, seed=11),
+        }
+        if LearnedPolicy is not None:
+            for name, (_team, path) in LEARNED_CHECKPOINTS.items():
+                if not path.exists():
+                    continue
+                try:
+                    self.policies[name] = LearnedPolicy(path)
+                except Exception:  # noqa: BLE001 - a half-written checkpoint mid-save shouldn't crash the app
+                    pass
+        self.policy_options_blue = self._options_for_team("blue")
+        self.policy_options_red = self._options_for_team("red")
+        if self.policy_blue not in self.policy_options_blue:
+            self.policy_blue = self.DEFAULT_POLICY
+        if self.policy_red not in self.policy_options_red:
+            self.policy_red = self.DEFAULT_POLICY
+
+    def _options_for_team(self, team: str) -> list[str]:
+        return [
+            name
+            for name in self.policies
+            if self.POLICY_TEAM_RESTRICTIONS.get(name, team) == team
+        ]
 
     def snapshot(self) -> dict[str, Any]:
         state = self.env.render_state(self.selected_agent)
@@ -95,7 +129,8 @@ class WebSimulation:
             "speed": self.speed,
             "policy_blue": self.policy_blue,
             "policy_red": self.policy_red,
-            "policy_options": self.policy_options,
+            "policy_options_blue": self.policy_options_blue,
+            "policy_options_red": self.policy_options_red,
             "selected_agent": self.selected_agent,
             "agents": self.env.possible_agents,
             "terrain_enabled": self.terrain_enabled,
@@ -109,9 +144,9 @@ class WebSimulation:
             self.playing = request.playing
         if request.speed is not None:
             self.speed = int(np.clip(request.speed, 1, 30))
-        if request.policy_blue is not None and request.policy_blue in self.policy_options:
+        if request.policy_blue is not None and request.policy_blue in self.policy_options_blue:
             self.policy_blue = request.policy_blue
-        if request.policy_red is not None and request.policy_red in self.policy_options:
+        if request.policy_red is not None and request.policy_red in self.policy_options_red:
             self.policy_red = request.policy_red
         if request.selected_agent == "None":
             self.selected_agent = None

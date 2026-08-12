@@ -364,8 +364,15 @@ def _generate_packed_facility_candidate(
     )
     buildings: list[Obstacle] = [_packed_block_to_rect(block, cell_size, height) for block in packed]
 
-    red_spawn_zones = [Rect(0.0, height - margin_rows * cell_size, width, margin_rows * cell_size)]
-    blue_spawn_zone = Rect(0.0, 0.0, width, blue_spawn_rows * cell_size)
+    # Inset from the left/right edges so the outermost spawned agent isn't
+    # placed almost flush against the world boundary (spawn positions are
+    # evenly spread across the zone's width, so the zone's own edges are
+    # where the outermost agents land).
+    spawn_padding = min(cell_size * 2.0, width * 0.2)
+    red_spawn_zones = [
+        Rect(spawn_padding, height - margin_rows * cell_size, width - 2.0 * spawn_padding, margin_rows * cell_size)
+    ]
+    blue_spawn_zone = Rect(spawn_padding, 0.0, width - 2.0 * spawn_padding, blue_spawn_rows * cell_size)
 
     # Protected zone lives in the band reserved above the blue spawn - pack_blocks
     # never places a building there, so it can't collide with one by construction.
